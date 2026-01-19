@@ -31,18 +31,23 @@
 - Stakeholder context (quantitative traders, algorithm designers)
 
 ### 📂 **Section 2: Data Source Identification (Cells 18-37)**
-**Three integrated datasets:**
+**Five integrated datasets (Three in final model, Two for validation/exploratory):**
 
-| Dataset | Source | File Location | Purpose |
-|---------|--------|---------------|---------|
-| **DS1: SPY OHLCV** | High-freq equity data | `sample_data/price_data.csv` | Target variable (5-min forward returns), price data backbone |
-| **DS2: LOBSTER Order Book** | Reconstructed LOB snapshots | `sample_data/ds2_lobster/` | Microstructure features (spread, depth, imbalance) |
-| **DS3: FRED Stress Indices** | Federal Reserve | `sample_data/ds3_fred/` | Regime indicator (NFCI, STLFSI2) |
+| Dataset | Source | File Location | Status | Purpose |
+|---------|--------|---------------|--------|---------|
+| **DS1: SPY OHLCV** | High-freq equity data | `sample_data/price_data.csv` | ✅ Primary | Target variable (5-min forward returns), price data backbone |
+| **DS2: LOBSTER Order Book** | Reconstructed LOB snapshots | `sample_data/ds2_lobster/` | ✅ Primary | Microstructure features (spread, depth, imbalance) |
+| **DS3: FRED Stress Indices** | Federal Reserve Economic Data | `sample_data/ds3_fred/` | ✅ Primary | Regime indicator (NFCI, STLFSI2) |
+| **DS4: Volatility/Microstructure** | High-freq SPY trades & LOB | Derived from DS1+DS2 | 📊 Exploratory | Volatility clustering, trade intensity, liquidity relationships |
+| **DS5: Alpha Vantage API** | Alpha Vantage Intraday API | API calls (selective) | ✅ Validation | Gap-fill and price/volume cross-validation |
 
-Why these datasets?
-- DS1: SPY is most liquid US equity ETF; perfect for microstructure analysis
-- DS2: Essential for testing Kyle (1985) and Glosten-Milgrom (1985) theories
-- DS3: Tests if microstructure relationships hold across market stress vs. normal conditions
+**Dataset Selection Rationale:**
+
+- **DS1:** SPY is most liquid US equity ETF; perfect for microstructure analysis
+- **DS2:** Essential for testing Kyle (1985) and Glosten-Milgrom (1985) theories  
+- **DS3:** Tests if microstructure relationships hold across market stress vs. normal conditions
+- **DS4:** Exploratory analysis of volatility dynamics; **excluded from final model** due to high redundancy with minute-level volatility measures already in DS1
+- **DS5:** Quality assurance mechanism; validates DS1 prices and fills isolated gaps via API rate-limited sampling
 
 ### 🔍 **Section 3: Data Exploration & Quality (Cells 38-50)**
 - **DS1 Exploration:** 2.07M minute-level observations, OHLCV structure validation
@@ -160,6 +165,60 @@ Purpose: Regime classification (normal vs. stress conditions)
 
 **Regime Application:**
 Tests if microstructure-to-returns relationships vary when markets are under stress
+
+---
+
+### **DS4: Volatility & Microstructure Dynamics (Exploratory)**
+```
+Source: Derived from DS1 (SPY high-frequency prices) + DS2 (top-of-book data)
+Derived Measures:
+  - Realized volatility (5-min, 20-min rolling windows)
+  - Trade intensity (trades per minute)
+  - Volatility clustering (rolling volatility of volatility)
+  - Liquidity-adjusted volatility (volatility × spread × depth interactions)
+Purpose: Exploratory analysis of volatility clustering and trade intensity patterns
+```
+
+**Why Exploratory (Not Final Model)?**
+
+- **High Redundancy:** Volatility measures derived from DS1 minute-level returns already capture clustering effects
+- **Marginal Value:** Limited incremental predictive power over realized volatility already computed
+- **Computational Cost:** Full intraday trade reconstruction requires excessive processing
+- **Research Focus:** Project emphasizes price direction (5-min ahead) not microstructure queue dynamics
+- **Decision:** DS4 examined in feature engineering (Cells 73-76) but excluded from final 19-feature modeling set
+
+**Key Finding:**
+Realized volatility from DS1 provides 99%+ of DS4's predictive signal, making DS4 redundant for the binary classification task.
+
+---
+
+### **DS5: Alpha Vantage Intraday Equity API (Quality Assurance)**
+```
+API: Alpha Vantage Intraday Equity API
+Endpoint: TIME_SERIES_INTRADAY
+Granularity: 1-minute candles (same as DS1)
+Rate Limit: 5 calls/minute (free tier)
+Usage: Selective validation only (not full-scale replacement)
+```
+
+**Validation Functions:**
+
+1. **Gap Identification:** Identify missing timestamps in DS1
+2. **Price Cross-Check:** Compare DS1 OHLCV vs. API prices over validation windows
+3. **Volume Validation:** Detect anomalous volume discrepancies
+4. **Data Quality:** Flag potential data corruption or feed errors
+
+**Implementation Strategy:**
+
+- **Selective Sampling:** Due to rate limits, DS5 validates only 10-20 time windows (not entire dataset)
+- **Reproducibility:** Documented which segments were validated to ensure reproducibility
+- **Non-Replacement:** DS5 fills gaps but doesn't replace DS1 wholesale
+- **Quality Gate:** Any DS1 anomalies detected via DS5 trigger investigation before final modeling
+
+**Rate Limit Considerations:**
+- 5 calls/minute × validation windows × potential retries
+- API used sparingly to preserve rate budget
+- Results cached for reproducibility across runs
 
 ---
 
